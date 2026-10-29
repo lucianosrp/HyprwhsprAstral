@@ -35,6 +35,9 @@ DesktopPluginComponent {
 
     readonly property int maxFps: num("maxFps", 60, 15, 240)
 
+    readonly property string appearance: pluginData.appearance ?? "auto"
+    readonly property bool lightMode: appearance === "light" || (appearance === "auto" && SessionData.isLightMode)
+
     function rgb(c) {
         return [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)]
     }
@@ -82,6 +85,12 @@ DesktopPluginComponent {
         "exitStyle": pluginData.exitStyle ?? "dissolve",
         "exitDuration": num("exitDuration", 450, 0, 3000) / 1000,
         "glowQuality": parseInt(pluginData.glowQuality ?? "2") || 0,
+        "horizon": pluginData.horizon ?? true,
+        "horizonOpacity": num("horizonOpacity", 70, 0, 100) / 100,
+        "horizonShade": num("horizonShade", 90, 0, 100) / 100,
+        "planetSize": num("planetSize", 100, 60, 200) / 100,
+        "rimGlow": num("rimGlow", 100, 0, 200) / 100,
+        "lightMode": root.lightMode,
         "colors": root.paletteColors
     })
 

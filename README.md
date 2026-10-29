@@ -21,6 +21,11 @@ hyprwhspr records.
   They follow the stars as the ribbon moves and snap if stretched too far. At loud peaks they
   chain into 3–5 star constellations that light up in sequence.
 
+- **Planet horizon**: the dark limb of a planet rises behind the ribbon while recording, with
+  a thin atmosphere rim that brightens at peaks. It keeps the stars readable over busy
+  wallpapers and fades out with them. In light mode it becomes a pale planet, and the stars
+  turn ink-toned instead of glowing.
+
 Everything is driven by the single `audio_level` value hyprwhspr writes, so no FFT or audio
 capture runs inside the shell.
 
@@ -55,6 +60,7 @@ Every visual parameter can be changed in the widget's settings:
 | Stardust ribbon | Stars, Ribbon height, Star size, Twinkle, Motion speed, Nebula glow, Center swell |
 | Drifting motes | Drift amount, Drift speed, Max motes |
 | Constellation links | Connections (Off / Sparse / Woven / Dense), Link reach, Link lifetime, Constellations at peaks |
+| Horizon | Planet horizon, Horizon opacity, Horizon darkness, Planet size, Rim glow, Appearance (Auto / Dark / Light) |
 | Colors | Palette (Theme, Theme duo, Theme primary, Astral, Ember, Custom) + three custom colors |
 | Performance | Glow quality (Full / Soft / Minimal), Frame rate cap |
 

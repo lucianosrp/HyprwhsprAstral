@@ -318,6 +318,66 @@ PluginSettings {
         defaultValue: true
     }
 
+    // ── Horizon ──────────────────────────────────────────────────────
+    SectionHeader { text: "Horizon" }
+
+    ToggleSetting {
+        settingKey: "horizon"
+        label: "Planet horizon"
+        description: "The dark limb of a planet rises behind the ribbon while recording, with an atmosphere rim that brightens at peaks. It keeps the stars readable over busy wallpapers."
+        defaultValue: true
+    }
+
+    SliderSetting {
+        settingKey: "horizonOpacity"
+        label: "Horizon opacity"
+        minimum: 0
+        maximum: 100
+        defaultValue: 70
+        unit: "%"
+    }
+
+    SliderSetting {
+        settingKey: "horizonShade"
+        label: "Horizon darkness"
+        description: "0% tints the planet with your palette; 100% is near black. Light mode always uses a pale planet."
+        minimum: 0
+        maximum: 100
+        defaultValue: 90
+        unit: "%"
+    }
+
+    SliderSetting {
+        settingKey: "planetSize"
+        label: "Planet size"
+        minimum: 60
+        maximum: 200
+        defaultValue: 100
+        unit: "%"
+    }
+
+    SliderSetting {
+        settingKey: "rimGlow"
+        label: "Rim glow"
+        description: "Brightness of the atmosphere line. 0% turns it off."
+        minimum: 0
+        maximum: 200
+        defaultValue: 100
+        unit: "%"
+    }
+
+    SelectionSetting {
+        settingKey: "appearance"
+        label: "Appearance"
+        description: "Auto follows DankMaterialShell's light/dark mode. Light mode draws ink-toned stars on a pale planet instead of glowing ones on a dark planet."
+        options: [
+            {label: "Auto (follow theme)", value: "auto"},
+            {label: "Dark", value: "dark"},
+            {label: "Light", value: "light"}
+        ]
+        defaultValue: "auto"
+    }
+
     // ── Colors ───────────────────────────────────────────────────────
     SectionHeader { text: "Colors" }
 

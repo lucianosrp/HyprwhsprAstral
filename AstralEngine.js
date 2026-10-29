@@ -36,6 +36,12 @@ var DEFAULTS = {
     exitStyle: "dissolve", // outro when recording stops: dissolve | collapse | fade | none
     exitDuration: 0.45,    // seconds
     glowQuality: 2,        // 0 cores only, 1 soft (stacked discs), 2 full gradients
+    horizon: true,         // a dark planet limb rises behind the ribbon while recording
+    horizonOpacity: 0.7,   // opacity of the planet body
+    horizonShade: 0.9,     // planet darkness in dark mode (0 = palette tint, 1 = black)
+    planetSize: 1.0,       // planet radius multiplier
+    rimGlow: 1.0,          // atmosphere rim brightness (0 = off)
+    lightMode: false,      // light theme: normal blending, deep "ink" cores, pale planet
     colors: [[181, 209, 125], [229, 186, 216], [173, 199, 248]]
 };
 
@@ -59,7 +65,7 @@ function create(options) {
         exitT: -1, exitK: 0, fade: 1,
         hist: [], histPos: 0, histAcc: 0,
         dots: [], motes: [], links: [], linked: {}, linkAcc: 0,
-        palette: [], lut: []
+        palette: [], lut: [], core: WHITE, planet: [0, 0, 0], shadeIn: 0
     };
     configure(st, options || {});
     return st;
@@ -98,6 +104,11 @@ function buildPalette(st) {
         var t = i / 63;
         st.lut.push(t < 0.5 ? mix(c[0], c[1], t * 2) : mix(c[1], c[2], (t - 0.5) * 2));
     }
+    // Hot cores go white on dark backgrounds; in light mode they'd vanish, so
+    // peaks deepen toward an ink tone of the first palette colour instead.
+    var light = st.opt.lightMode;
+    st.core = light ? mix(c[0], [0, 0, 0], 0.62) : WHITE;
+    st.planet = light ? mix(c[0], WHITE, 0.9) : mix(c[0], [0, 0, 0], 0.78 + 0.22 * clamp(st.opt.horizonShade, 0, 1));
 }
 function grad(st, t) { return st.lut[Math.round(clamp(t, 0, 1) * 63)]; }
 
@@ -156,7 +167,7 @@ function exitTransform(st, d) {
 
 function clear(st) {
     st.smooth = 0; st.peak = 0; st.flash = 0; st.lastFlash = 0; st.energy = 0;
-    st.exitT = -1; st.exitK = 0; st.fade = 1;
+    st.exitT = -1; st.exitK = 0; st.fade = 1; st.shadeIn = 0;
     for (var h = 0; h < st.hist.length; h++) st.hist[h] = 0;
     st.motes = []; st.links = []; st.linked = {};
     for (var i = 0; i < st.dots.length; i++) st.dots[i].lit = 0;
@@ -217,6 +228,7 @@ function updateSignal(st, dt, rawLevel, recording) {
 // ── Primitives ────────────────────────────────────────────────────────────
 function star(st, ctx, x, y, r, col, a, heat) {
     if (a <= 0.004) return;
+    if (st.opt.lightMode) r *= 0.85;
     var q = st.opt.glowQuality;
     var halo = r * (2.6 + 3.5 * heat);
     if (q >= 2 && halo > 2.2) {
@@ -232,7 +244,7 @@ function star(st, ctx, x, y, r, col, a, heat) {
         ctx.fillStyle = rgba(col, a * (0.12 + 0.12 * heat));
         ctx.beginPath(); ctx.arc(x, y, halo * 0.45, 0, TAU); ctx.fill();
     }
-    ctx.fillStyle = rgba(mix(col, WHITE, Math.min(0.85, heat * 0.9)), a);
+    ctx.fillStyle = rgba(mix(col, st.core, Math.min(0.85, heat * 0.9)), a);
     ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
 }
 
@@ -249,6 +261,49 @@ function bandGlow(st, ctx, cy, strength, thick) {
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill();
     ctx.restore();
+}
+
+// ── Horizon ───────────────────────────────────────────────────────────────
+// The limb of a planet behind the ribbon, with an atmosphere rim that
+// brightens at peaks. Faded toward the widget edges so its bounds never show.
+function drawHorizon(st, ctx, A) {
+    var o = st.opt, w = st.w, h = st.h, s = st.smooth;
+    var alpha = clamp(o.horizonOpacity, 0, 1) * A;
+    if (alpha <= 0.002) return;
+    var R = w * 0.62 * o.planetSize;
+    var cx = w / 2, cy = h * (0.38 - 0.06 * s) + R;
+    // Gradients start at radius 0: QML's Canvas fills the inside of a non-zero
+    // inner circle with the first stop, unlike browsers.
+    var body = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    body.addColorStop(0, rgba(st.planet, alpha));
+    body.addColorStop(0.92, rgba(st.planet, alpha * 0.92));
+    body.addColorStop(1, rgba(st.planet, alpha * 0.75));
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+    if (o.rimGlow > 0) {
+        var ra = Math.min(1, ((o.lightMode ? 0.3 : 0.35) + 0.55 * Math.min(1, s + st.peak * 0.6 + st.flash * 0.5)) * o.rimGlow) * A;
+        var rimCol = o.lightMode ? mix(o.colors[0], [0, 0, 0], 0.15) : mix(o.colors[0], WHITE, 0.15);
+        var rim = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.07);
+        rim.addColorStop(0, rgba(rimCol, 0));
+        rim.addColorStop(0.9, rgba(rimCol, 0));
+        rim.addColorStop(0.921, rgba(rimCol, ra));
+        rim.addColorStop(0.94, rgba(rimCol, ra * 0.45));
+        rim.addColorStop(1, rgba(rimCol, 0));
+        ctx.fillStyle = rim;
+        ctx.beginPath(); ctx.arc(cx, cy, R * 1.07, 0, TAU); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.save();
+    ctx.translate(w / 2, h * 0.62);
+    ctx.scale(w * 0.5, h * 0.75);
+    var m = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    m.addColorStop(0, "rgba(0,0,0,1)");
+    m.addColorStop(0.6, "rgba(0,0,0,0.85)");
+    m.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = m;
+    ctx.fillRect(-1, -1, 2, 2);
+    ctx.restore();
+    ctx.globalCompositeOperation = "source-over";
 }
 
 // ── Ribbon ────────────────────────────────────────────────────────────────
@@ -375,7 +430,7 @@ function drawLinks(st, ctx, dt) {
         }
         var alpha = k * (0.22 + 0.7 * Math.min(a.a, b.a)) * (0.55 + 0.45 * L.s) * (1 - Math.min(1, dd / (R * 2)) * 0.4);
         if (alpha < 0.01) continue;
-        var ca = mix(grad(st, a.t), WHITE, a.heat * 0.5), cb = mix(grad(st, b.t), WHITE, b.heat * 0.5);
+        var ca = mix(grad(st, a.t), st.core, a.heat * 0.5), cb = mix(grad(st, b.t), st.core, b.heat * 0.5);
         var g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
         g.addColorStop(0, rgba(ca, alpha));
         g.addColorStop(0.5, rgba(mix(ca, cb, 0.5), alpha * 0.55));
@@ -433,8 +488,12 @@ function frame(st, ctx, dt, rawLevel, recording) {
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, st.w, st.h);
     if (st.fade <= 0.001) return;
-    ctx.globalAlpha = st.fade;
-    ctx.globalCompositeOperation = "lighter";
+    // Horizon eases in over 0.3 s when recording starts and fades out with the scene.
+    if (recording) st.shadeIn = Math.min(1, st.shadeIn + dt / 0.3);
+    if (st.opt.horizon) drawHorizon(st, ctx, st.shadeIn * st.fade);
+    var light = st.opt.lightMode;
+    ctx.globalAlpha = st.fade * (light ? 0.85 : 1);
+    ctx.globalCompositeOperation = light ? "source-over" : "lighter";
 
     layoutRibbon(st);
     bandGlow(st, ctx, st.h / 2, st.smooth * 0.6 + st.peak * 1.2 + st.flash * 0.8, st.h * (0.12 + 0.22 * st.smooth) * st.opt.ribbonHeight);
