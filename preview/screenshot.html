@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0}
+canvas{display:block;width:1280px;height:400px}
+</style></head><body>
+<canvas id="d"></canvas><canvas id="l"></canvas>
+<script src="../AstralEngine.js"></script>
+<script>
+// Deterministic render: seeded RNG + fixed-step synthetic speech, ending on a peak.
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const SEED=+(location.hash.slice(1)||7);
+function render(id,bg,colors,light){
+  Math.random=rng(SEED);
+  const c=document.getElementById(id),ctx=c.getContext("2d"),d=1;
+  c.width=1280;c.height=400;
+  const st=create({colors,lightMode:light});setSize(st,1280,400);
+  let syl=0,sylT=0;
+  function speech(dt){sylT-=dt;if(sylT<=0){syl=.1+Math.random()*.28;sylT=.09+Math.random()*.17}
+    const k=1-Math.pow(Math.max(0,sylT)/.26,2);return syl*(.55+.45*Math.sin(k*Math.PI))}
+  const N=260;
+  for(let i=0;i<N;i++){const lv=i>N-22?0.34:speech(1/60);frame(st,ctx,1/60,lv,true)}
+  // composite onto the plain background
+  const img=document.createElement("canvas");img.width=1280;img.height=400;const g=img.getContext("2d");
+  g.fillStyle=bg;g.fillRect(0,0,1280,400);g.drawImage(c,0,0);ctx.globalCompositeOperation="source-over";
+  ctx.clearRect(0,0,1280,400);ctx.drawImage(img,0,0);
+}
+render("d","#141218",[[208,188,255],[204,194,220],[239,184,200]],false);
+render("l","#f6f2fa",[[103,80,164],[98,91,113],[125,82,96]],true);
+</script></body></html>

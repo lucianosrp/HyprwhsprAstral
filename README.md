@@ -73,6 +73,10 @@ changes.
 signal, a live-mic mode and sliders for the settings above. Open it directly in a browser to try
 looks before changing the widget.
 
+`preview/screenshot.html` regenerates `screenshot.png` deterministically (seeded, dark and light
+mode on plain backgrounds): open it in a 1280×800 window, or run
+`google-chrome-stable --headless --allow-file-access-from-files --window-size=1280,800 --screenshot preview/screenshot.html#11`.
+
 ## Install / use
 
 ```bash
@@ -96,7 +100,7 @@ as desired.
 
 ## Requirements
 
-- DankMaterialShell ≥ 1.2.0
+- DankMaterialShell ≥ 1.5.0
 - hyprwhspr
 
 ## License

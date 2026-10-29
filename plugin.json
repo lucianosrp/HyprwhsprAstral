@@ -10,8 +10,8 @@
   "capabilities": ["desktop-widget"],
   "component": "./HyprwhsprAstral.qml",
   "settings": "./HyprwhsprAstralSettings.qml",
-  "compositors": ["niri", "hyprland"],
+  "compositors": ["any"],
   "requires": ["hyprwhspr"],
-  "requires_dms": ">=1.2.0",
+  "requires_dms": ">=1.5.0",
   "permissions": ["settings_read", "settings_write", "process"]
 }
