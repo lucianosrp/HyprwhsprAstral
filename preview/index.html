@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hyprwhspr Astral — preview</title>
+<!-- Browser playground for the widget. It loads the exact same AstralEngine.js
+     the QML widget uses, so settings tuned here look the same on the desktop.
+     Open this file directly in a browser; no server needed. -->
+<style>
+  :root { --surface: #1c2027; --text: #e0e2ec; --muted: #8b91a0; --accent: #b5d17d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; color: var(--text); background: #10131a; font: 14px/1.45 system-ui, sans-serif; }
+  h1 { margin: 0 0 14px; font-size: 18px; font-weight: 600; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; background: var(--surface); border-radius: 999px; padding: 3px; border: 1px solid #ffffff12; }
+  .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .seg button.on { background: #ffffff14; color: var(--text); }
+  .stage { position: relative; height: 280px; background: #07090d; border: 1px solid #ffffff0d; border-radius: 16px; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px 22px; margin-top: 16px; }
+  label { display: grid; grid-template-columns: 1fr 120px 48px; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  label output { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { accent-color: var(--accent); width: 100%; }
+  .meter { width: 90px; height: 6px; border-radius: 3px; background: #ffffff10; overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--accent); }
+</style>
+</head>
+<body>
+<h1>Hyprwhspr Astral · preview</h1>
+<div class="controls">
+  <div class="seg" id="state">
+    <button data-v="speech" class="on">Speaking</button>
+    <button data-v="loud">Loud</button>
+    <button data-v="idle">Stopped</button>
+    <button data-v="mic">Live mic</button>
+  </div>
+  <div class="seg" id="links">
+    <button data-v="0">No links</button>
+    <button data-v="1" class="on">Sparse</button>
+    <button data-v="2.2">Woven</button>
+    <button data-v="4">Dense</button>
+  </div>
+  <div class="seg" id="palette">
+    <button data-v="theme" class="on">Theme</button>
+    <button data-v="astral">Astral</button>
+    <button data-v="ember">Ember</button>
+  </div>
+  <div class="seg" id="quality">
+    <button data-v="2" class="on">Full glow</button>
+    <button data-v="1">Soft</button>
+    <button data-v="0">Minimal</button>
+  </div>
+  <div class="meter"><i id="lvl"></i></div>
+</div>
+<div class="stage"><canvas id="cv"></canvas></div>
+<div class="grid" id="sliders"></div>
+
+<script src="../AstralEngine.js"></script>
+<script>
+// Slider spec mirrors HyprwhsprAstralSettings.qml (percent sliders → /100).
+const SLIDERS = [
+  ["sensitivity", "Sensitivity", 50, 500, 200, 100],
+  ["peakBoost", "Peak brightness", 0, 300, 160, 100],
+  ["onsetSparkle", "Onset sparkle", 0, 200, 100, 100],
+  ["starCount", "Stars", 40, 600, 220, 1],
+  ["ribbonHeight", "Ribbon height", 20, 150, 100, 100],
+  ["starSize", "Star size", 50, 250, 100, 100],
+  ["twinkle", "Twinkle", 0, 100, 100, 100],
+  ["motionSpeed", "Motion speed", 25, 250, 100, 100],
+  ["bandGlow", "Nebula glow", 0, 200, 100, 100],
+  ["driftAmount", "Drift amount", 0, 300, 100, 100],
+  ["driftSpeed", "Drift speed", 25, 250, 100, 100],
+  ["maxMotes", "Max motes", 0, 1500, 500, 1],
+  ["linkReach", "Link reach", 40, 250, 100, 100],
+  ["linkLifetime", "Link lifetime", 25, 300, 100, 100],
+];
+const PALETTES = {
+  theme: [[181, 209, 125], [229, 186, 216], [173, 199, 248]],
+  astral: [[223, 233, 255], [159, 180, 255], [200, 168, 255]],
+  ember: [[242, 207, 122], [232, 154, 90], [255, 241, 201]],
+};
+const opts = { colors: PALETTES.theme };
+const st = create(opts);
+const sl = document.getElementById("sliders");
+for (const [key, name, min, max, def, div] of SLIDERS) {
+  const l = document.createElement("label");
+  l.innerHTML = `${name}<input type="range" min="${min}" max="${max}" value="${def}"><output>${def}${div === 100 ? "%" : ""}</output>`;
+  const input = l.querySelector("input"), out = l.querySelector("output");
+  input.addEventListener("input", () => {
+    out.textContent = input.value + (div === 100 ? "%" : "");
+    configure(st, { [key]: input.value / div });
+  });
+  sl.appendChild(l);
+}
+
+const c = document.getElementById("cv"), ctx = c.getContext("2d");
+function fit() {
+  const r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+  c.width = r.width * d; c.height = r.height * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+  setSize(st, r.width, r.height);
+}
+new ResizeObserver(fit).observe(c); fit();
+
+// Synthetic speech at hyprwhspr's audio_level scale (0–1 RMS).
+let mode = "speech", syl = 0, sylT = 0, pauseT = 0, analyser = null, buf = null;
+function speech(dt, gain) {
+  if (pauseT > 0) { pauseT -= dt; return 0.004 * Math.random(); }
+  sylT -= dt;
+  if (sylT <= 0) { syl = (0.08 + Math.random() * 0.24) * gain; sylT = 0.09 + Math.random() * 0.17; if (Math.random() < 0.07) pauseT = 0.4 + Math.random() * 0.8; }
+  const k = 1 - Math.pow(Math.max(0, sylT) / 0.26, 2);
+  return Math.max(0, syl * (0.55 + 0.45 * Math.sin(k * Math.PI)));
+}
+function mic() {
+  if (!analyser) return 0;
+  analyser.getFloatTimeDomainData(buf);
+  let s = 0; for (const v of buf) s += v * v;
+  return Math.sqrt(s / buf.length);
+}
+
+let last = 0;
+function loop(now) {
+  const dt = (now - (last || now)) / 1000; last = now;
+  const recording = mode !== "idle";
+  const level = mode === "speech" ? speech(dt, 1) : mode === "loud" ? speech(dt, 1.7) : mode === "mic" ? mic() : 0;
+  if (isActive(st, recording)) frame(st, ctx, dt, level, recording);
+  else drawIdle(st, ctx);
+  document.getElementById("lvl").style.width = (st.smooth * 100).toFixed(1) + "%";
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function seg(id, fn) {
+  const el = document.getElementById(id);
+  el.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    el.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    fn(b.dataset.v);
+  });
+}
+seg("links", v => configure(st, { linkDensity: parseFloat(v) }));
+seg("quality", v => configure(st, { glowQuality: parseInt(v) }));
+seg("palette", v => { configure(st, { colors: PALETTES[v] }); document.documentElement.style.setProperty("--accent", `rgb(${PALETTES[v][0]})`); });
+seg("state", async v => {
+  mode = v;
+  if (v === "mic" && !analyser) {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ac = new AudioContext(); analyser = ac.createAnalyser(); analyser.fftSize = 2048;
+      buf = new Float32Array(analyser.fftSize); ac.createMediaStreamSource(s).connect(analyser);
+    } catch (err) { alert("Microphone unavailable: " + err.message); }
+  }
+});
+</script>
+</body>
+</html>

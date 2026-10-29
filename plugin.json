@@ -1,0 +1,17 @@
+{
+  "id": "hyprwhsprAstral",
+  "name": "Hyprwhspr Astral",
+  "description": "Astral desktop voice visualizer for hyprwhspr. A ribbon of twinkling stardust that breathes with your voice while hyprwhspr is recording, shedding drifting motes and forming fleeting constellations at peaks.",
+  "version": "1.0.0",
+  "author": "luciano",
+  "license": "MIT",
+  "icon": "auto_awesome",
+  "type": "desktop",
+  "capabilities": ["desktop-widget"],
+  "component": "./HyprwhsprAstral.qml",
+  "settings": "./HyprwhsprAstralSettings.qml",
+  "compositors": ["niri", "hyprland"],
+  "requires": ["hyprwhspr"],
+  "requires_dms": ">=1.2.0",
+  "permissions": ["settings_read", "settings_write", "process"]
+}

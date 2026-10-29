@@ -1,0 +1,13 @@
+# Qt / QML build & cache artifacts
+*.qmlc
+*.jsc
+*_qmlcache.qrc
+*.qmlproject.user
+*.qmlproject.user.*
+
+# Editor / tooling
+*.autosave
+
+# Local debug dumps
+dms_errors*.txt
+dms_journal*.txt
