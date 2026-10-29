@@ -79,6 +79,8 @@ DesktopPluginComponent {
         "linkReach": num("linkReach", 100, 40, 250) / 100,
         "linkLifetime": num("linkLifetime", 100, 25, 300) / 100,
         "constellations": pluginData.constellations ?? true,
+        "exitStyle": pluginData.exitStyle ?? "dissolve",
+        "exitDuration": num("exitDuration", 450, 0, 3000) / 1000,
         "glowQuality": parseInt(pluginData.glowQuality ?? "2") || 0,
         "colors": root.paletteColors
     })
@@ -236,7 +238,7 @@ DesktopPluginComponent {
 
     opacity: root.animating ? root.activeOpacity : (root.idleBehavior === "hidden" ? 0 : root.idleOpacity)
     Behavior on opacity {
-        NumberAnimation { duration: 400; easing.type: Easing.InOutQuad }
+        NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
     }
 
     // Optional backing panel; also shown as a faint outline in the idle

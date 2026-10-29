@@ -33,6 +33,8 @@ var DEFAULTS = {
     linkReach: 1.0,        // max link length multiplier
     linkLifetime: 1.0,     // how long links hold before dissolving
     constellations: true,  // chain links into 3–5 star constellations at peaks
+    exitStyle: "dissolve", // outro when recording stops: dissolve | collapse | fade | none
+    exitDuration: 0.45,    // seconds
     glowQuality: 2,        // 0 cores only, 1 soft (stacked discs), 2 full gradients
     colors: [[181, 209, 125], [229, 186, 216], [173, 199, 248]]
 };
@@ -54,6 +56,7 @@ function create(options) {
         opt: {}, w: 1, h: 1, t: 0,
         level: 0, smooth: 0, peak: 0, flash: 0, lastFlash: 0, burst: false,
         agc: 0.3, noise: 0, energy: 0, phase: 0,
+        exitT: -1, exitK: 0, fade: 1,
         hist: [], histPos: 0, histAcc: 0,
         dots: [], motes: [], links: [], linked: {}, linkAcc: 0,
         palette: [], lut: []
@@ -108,13 +111,52 @@ function setSize(st, w, h) {
 }
 
 // True while anything is still visible/moving; the host can stop its frame
-// loop once this goes false after recording ends.
+// loop once this goes false. After recording stops, the scene plays its exit
+// animation for exactly exitDuration seconds and is then done.
 function isActive(st, recording) {
-    return recording || st.smooth > 0.002 || st.motes.length > 0 || st.links.length > 0;
+    if (recording) return true;
+    if (st.exitT < 0) return st.smooth > 0.002;   // never started an exit
+    return st.exitT < exitDuration(st);
+}
+
+function exitDuration(st) {
+    return st.opt.exitStyle === "none" ? 0 : Math.max(0, st.opt.exitDuration);
+}
+
+// Exit progress: exitK 0 → 1 over exitDuration; fade is the global alpha.
+function updateExit(st, dt, recording) {
+    if (recording) {
+        st.exitT = -1; st.exitK = 0; st.fade = 1;
+        return;
+    }
+    if (st.exitT < 0) st.exitT = 0;
+    else st.exitT += dt;
+    var dur = exitDuration(st);
+    st.exitK = dur > 0 ? clamp(st.exitT / dur, 0, 1) : 1;
+    var k = st.exitK;
+    // ease-in: holds briefly, then vanishes quickly
+    st.fade = 1 - k * k * (3 - 2 * k);
+}
+
+// Bend grain positions during the exit animation.
+function exitTransform(st, d) {
+    if (st.exitK <= 0) return;
+    var k = st.exitK, e = k * k, cx = st.w / 2, cy = st.h / 2;
+    if (st.opt.exitStyle === "collapse") {
+        // ribbon folds into a single bright point at the centre
+        var c = Math.pow(k, 0.7);
+        d.x += (cx - d.x) * c;
+        d.y += (cy - d.y) * c;
+    } else if (st.opt.exitStyle === "dissolve") {
+        // stardust disperses: grains drift apart from the centre line and shrink away
+        d.x += (d.x - cx) * 0.06 * e + Math.sin(d.q * 7) * st.h * 0.05 * e;
+        d.y += (d.side * (0.3 + Math.abs(d.j))) * st.h * 0.22 * e;
+    }
 }
 
 function clear(st) {
     st.smooth = 0; st.peak = 0; st.flash = 0; st.lastFlash = 0; st.energy = 0;
+    st.exitT = -1; st.exitK = 0; st.fade = 1;
     for (var h = 0; h < st.hist.length; h++) st.hist[h] = 0;
     st.motes = []; st.links = []; st.linked = {};
     for (var i = 0; i < st.dots.length; i++) st.dots[i].lit = 0;
@@ -239,6 +281,7 @@ function layoutRibbon(st) {
         var tw = 1 - o.twinkle * (0.45 - 0.45 * Math.sin(st.t * d.s + d.p));
         var local = peakOf(st, s) * wob * e;
         d.local = local;
+        exitTransform(st, d);
         d.a = Math.min(1, (0.18 + 0.82 * st.smooth * wob) * (tw + (1 - tw) * local) + st.flash * 0.35 * tw + d.lit * 0.4);
         d.heat = Math.min(1, local * 1.1 + st.flash * 0.6 * (d.r > 1.2 ? 1 : 0.4) + d.lit * 0.5);
     }
@@ -248,7 +291,8 @@ function drawRibbon(st, ctx, dt) {
     var size = st.opt.starSize;
     for (var i = 0; i < st.dots.length; i++) {
         var d = st.dots[i];
-        star(st, ctx, d.x, d.y, d.r * size * (1 + st.smooth * 0.5 + d.local * 1.4 + d.lit * 0.6), grad(st, d.t), d.a, d.heat);
+        var shrink = st.opt.exitStyle === "dissolve" ? 1 - 0.6 * st.exitK : 1;
+        star(st, ctx, d.x, d.y, d.r * size * shrink * (1 + st.smooth * 0.5 + d.local * 1.4 + d.lit * 0.6), grad(st, d.t), d.a, d.heat);
         d.lit *= Math.exp(-dt / 0.5);
     }
 }
@@ -285,7 +329,7 @@ function addLink(st, i, j, strength, delay) {
 
 function spawnLinks(st, dt) {
     var o = st.opt;
-    if (o.linkDensity <= 0 || st.smooth <= 0.01) return;
+    if (o.linkDensity <= 0 || st.smooth <= 0.01 || st.exitK > 0) return;
     st.linkAcc += dt * o.linkDensity * (0.6 + 6 * st.smooth * st.smooth + 9 * st.peak);
     var guard = 0;
     while (st.linkAcc >= 1 && guard++ < 20) {
@@ -366,7 +410,13 @@ function stepMotes(st, ctx, dt) {
         if (k >= 1 || m.y < -10 || m.y > st.h + 10) continue;
         keep.push(m);
         var fade = Math.sin(Math.PI * Math.min(1, k * 1.6 + 0.05)) * (1 - k * 0.35);
-        star(st, ctx, m.x, m.y, m.r * size * (1 + m.e * 1.3 * (1 - k * 0.6)), grad(st, m.u), fade * (0.55 + 0.45 * m.e), m.e * (1 - k));
+        var px = m.x, py = m.y;
+        if (st.exitK > 0 && st.opt.exitStyle === "collapse") {
+            var c = Math.pow(st.exitK, 0.7);
+            px += (st.w / 2 - px) * c;
+            py += (st.h / 2 - py) * c;
+        }
+        star(st, ctx, px, py, m.r * size * (1 + m.e * 1.3 * (1 - k * 0.6)), grad(st, m.u), fade * (0.55 + 0.45 * m.e), m.e * (1 - k));
     }
     st.motes = keep;
 }
@@ -377,9 +427,13 @@ function frame(st, ctx, dt, rawLevel, recording) {
     dt = clamp(dt, 0, 0.05);
     st.t += dt;
     updateSignal(st, dt, rawLevel, recording);
+    updateExit(st, dt, recording);
 
     ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, st.w, st.h);
+    if (st.fade <= 0.001) return;
+    ctx.globalAlpha = st.fade;
     ctx.globalCompositeOperation = "lighter";
 
     layoutRibbon(st);
@@ -389,7 +443,7 @@ function frame(st, ctx, dt, rawLevel, recording) {
     drawRibbon(st, ctx, dt);
 
     var o = st.opt;
-    if (o.driftAmount > 0) {
+    if (o.driftAmount > 0 && st.exitK <= 0) {
         var p = 0.05 * o.driftAmount;
         for (var i = 0; i < st.dots.length; i++) {
             var d = st.dots[i];
@@ -406,6 +460,7 @@ function frame(st, ctx, dt, rawLevel, recording) {
     }
     stepMotes(st, ctx, dt);
     ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
 }
 
 // Static, faint resting thread used for the idle placeholder (painted once).

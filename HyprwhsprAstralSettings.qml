@@ -64,6 +64,29 @@ PluginSettings {
         defaultValue: "dim"
     }
 
+    SelectionSetting {
+        settingKey: "exitStyle"
+        label: "Exit animation"
+        description: "What happens when recording stops. The widget is gone as soon as the animation ends."
+        options: [
+            {label: "Dissolve (stardust disperses)", value: "dissolve"},
+            {label: "Collapse (folds into a point)", value: "collapse"},
+            {label: "Fade", value: "fade"},
+            {label: "None (disappear instantly)", value: "none"}
+        ]
+        defaultValue: "dissolve"
+    }
+
+    SliderSetting {
+        settingKey: "exitDuration"
+        label: "Exit duration"
+        description: "Length of the exit animation."
+        minimum: 0
+        maximum: 2000
+        defaultValue: 450
+        unit: "ms"
+    }
+
     SliderSetting {
         settingKey: "idleOpacity"
         label: "Idle opacity"

@@ -27,8 +27,8 @@ capture runs inside the shell.
 ## Behavior
 
 - **Recording**: the scene animates, frame-synced and capped at the configured frame rate.
-- **After recording stops**: the ribbon settles and motes and links finish dissolving, then the
-  frame loop stops completely.
+- **After recording stops**: a short exit animation plays (*Dissolve*, *Collapse*, *Fade* or
+  *None*; 450 ms by default), then the frame loop stops completely.
 - **Idle**: controlled by *When not recording*:
   - **Show dim placeholder** (default): a faint, static thread of stars painted once, so you
     can move and resize the widget without dictating.
@@ -50,7 +50,7 @@ Every visual parameter can be changed in the widget's settings:
 
 | Section | Settings |
 | --- | --- |
-| Layout & visibility | Width, Height, When not recording, Idle opacity, Active opacity, Background panel |
+| Layout & visibility | Width, Height, When not recording, Exit animation, Exit duration, Idle opacity, Active opacity, Background panel |
 | Response | Sensitivity, Auto gain, Voice reactivity, Ripple spread, Peak brightness, Onset sparkle |
 | Stardust ribbon | Stars, Ribbon height, Star size, Twinkle, Motion speed, Nebula glow, Center swell |
 | Drifting motes | Drift amount, Drift speed, Max motes |

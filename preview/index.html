@@ -31,7 +31,7 @@
   <div class="seg" id="state">
     <button data-v="speech" class="on">Speaking</button>
     <button data-v="loud">Loud</button>
-    <button data-v="idle">Stopped</button>
+    <button data-v="idle">Stop recording</button>
     <button data-v="mic">Live mic</button>
   </div>
   <div class="seg" id="links">
@@ -44,6 +44,12 @@
     <button data-v="theme" class="on">Theme</button>
     <button data-v="astral">Astral</button>
     <button data-v="ember">Ember</button>
+  </div>
+  <div class="seg" id="exit">
+    <button data-v="dissolve" class="on">Dissolve</button>
+    <button data-v="collapse">Collapse</button>
+    <button data-v="fade">Fade</button>
+    <button data-v="none">None</button>
   </div>
   <div class="seg" id="quality">
     <button data-v="2" class="on">Full glow</button>
@@ -141,6 +147,7 @@ function seg(id, fn) {
   });
 }
 seg("links", v => configure(st, { linkDensity: parseFloat(v) }));
+seg("exit", v => configure(st, { exitStyle: v }));
 seg("quality", v => configure(st, { glowQuality: parseInt(v) }));
 seg("palette", v => { configure(st, { colors: PALETTES[v] }); document.documentElement.style.setProperty("--accent", `rgb(${PALETTES[v][0]})`); });
 seg("state", async v => {
