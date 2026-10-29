@@ -51,7 +51,7 @@ Every visual parameter can be changed in the widget's settings:
 | Section | Settings |
 | --- | --- |
 | Layout & visibility | Width, Height, When not recording, Idle opacity, Active opacity, Background panel |
-| Response | Sensitivity, Peak brightness, Onset sparkle |
+| Response | Sensitivity, Auto gain, Voice reactivity, Ripple spread, Peak brightness, Onset sparkle |
 | Stardust ribbon | Stars, Ribbon height, Star size, Twinkle, Motion speed, Nebula glow, Center swell |
 | Drifting motes | Drift amount, Drift speed, Max motes |
 | Constellation links | Connections (Off / Sparse / Woven / Dense), Link reach, Link lifetime, Constellations at peaks |

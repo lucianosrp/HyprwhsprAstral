@@ -104,6 +104,36 @@ PluginSettings {
     }
 
     SliderSetting {
+        settingKey: "autoGain"
+        label: "Auto gain"
+        description: "Adapts to your recent loudness so normal speech uses the full range on any mic. 0% uses Sensitivity alone."
+        minimum: 0
+        maximum: 100
+        defaultValue: 70
+        unit: "%"
+    }
+
+    SliderSetting {
+        settingKey: "reactivity"
+        label: "Voice reactivity"
+        description: "How strongly syllables kick the grains and speed up the ribbon while you speak."
+        minimum: 0
+        maximum: 300
+        defaultValue: 150
+        unit: "%"
+    }
+
+    SliderSetting {
+        settingKey: "rippleSpread"
+        label: "Ripple spread"
+        description: "Each syllable travels from the centre outward. 0% moves the whole ribbon at once."
+        minimum: 0
+        maximum: 200
+        defaultValue: 100
+        unit: "%"
+    }
+
+    SliderSetting {
         settingKey: "peakBoost"
         label: "Peak brightness"
         description: "How hard loud moments bloom: larger grains with white-hot cores and a brighter nebula band. Quiet speech stays soft either way."

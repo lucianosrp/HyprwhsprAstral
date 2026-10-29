@@ -17,6 +17,9 @@ var DEFAULTS = {
     peakBoost: 1.6,        // how hard peaks bloom (brightness / white-hot cores)
     onsetSparkle: 1.0,     // flash + spark burst on sudden onsets (0 = off)
     motionSpeed: 1.0,      // shimmer speed of the ribbon
+    reactivity: 1.5,       // how much the voice shakes / speeds up the ribbon
+    rippleSpread: 1.0,     // syllables travel from the centre outward (0 = whole ribbon at once)
+    autoGain: 0.7,         // normalise to your recent loudness (0 = fixed gain)
     starCount: 220,        // grains in the ribbon
     ribbonHeight: 1.0,     // vertical spread at full level
     starSize: 1.0,         // grain radius multiplier
@@ -50,6 +53,8 @@ function create(options) {
     var st = {
         opt: {}, w: 1, h: 1, t: 0,
         level: 0, smooth: 0, peak: 0, flash: 0, lastFlash: 0, burst: false,
+        agc: 0.3, noise: 0, energy: 0, phase: 0,
+        hist: [], histPos: 0, histAcc: 0,
         dots: [], motes: [], links: [], linked: {}, linkAcc: 0,
         palette: [], lut: []
     };
@@ -109,7 +114,8 @@ function isActive(st, recording) {
 }
 
 function clear(st) {
-    st.smooth = 0; st.peak = 0; st.flash = 0; st.lastFlash = 0;
+    st.smooth = 0; st.peak = 0; st.flash = 0; st.lastFlash = 0; st.energy = 0;
+    for (var h = 0; h < st.hist.length; h++) st.hist[h] = 0;
     st.motes = []; st.links = []; st.linked = {};
     for (var i = 0; i < st.dots.length; i++) st.dots[i].lit = 0;
 }
@@ -117,14 +123,49 @@ function clear(st) {
 // ── Signal ────────────────────────────────────────────────────────────────
 function updateSignal(st, dt, rawLevel, recording) {
     var o = st.opt;
-    var target = recording ? Math.pow(Math.min(1, Math.max(0, rawLevel) * o.sensitivity), 0.45) : 0;
+    var x = recording ? Math.max(0, rawLevel) * o.sensitivity : 0;
+    var gatedNoise = 0;
+    if (recording) {
+        // Noise floor: follows the quietest input quickly, rises slowly, so a
+        // quiet room reads as stillness instead of a constant low wobble.
+        st.noise += (x - st.noise) * (1 - Math.exp(-dt / (x < st.noise ? 0.15 : 10.0)));
+        st.noise = Math.min(st.noise, st.agc * 0.3);
+        // Auto gain: track recent peaks (fast up, ~4 s down) and scale so
+        // normal speech uses the full range regardless of mic level.
+        st.agc += (x - st.agc) * (1 - Math.exp(-dt / (x > st.agc ? 0.08 : 4.0)));
+        if (o.autoGain > 0) {
+            var g = 1 + (clamp(0.85 / Math.max(st.agc, 0.12), 0.5, 4) - 1) * o.autoGain;
+            x *= g;
+            gatedNoise = st.noise * g;
+        } else {
+            gatedNoise = st.noise;
+        }
+    }
+    // Perceptual curve, then a soft gate just above the noise floor (applied
+    // after the curve so near-floor flicker isn't expanded into motion).
+    var target = Math.pow(Math.min(1, x), 0.45);
+    var floorT = Math.min(0.8, Math.pow(Math.min(1, gatedNoise * 1.4), 0.45));
+    target = Math.max(0, (target - floorT) / (1 - floorT));
     var prev = st.smooth;
     // fast attack, slower release, frame-rate independent
     st.smooth += (target - st.smooth) * (1 - Math.exp(-dt / (target > st.smooth ? 0.05 : 0.18)));
     if (!recording && st.smooth < 0.002) st.smooth = 0;
     // brightness only blooms in the top part of the range
-    st.peak = Math.min(1, Math.pow(Math.max(0, (st.smooth - 0.35) / 0.65), 1.3) * o.peakBoost);
+    st.peak = peakOf(st, st.smooth);
     var rise = (st.smooth - prev) / Math.max(dt, 1e-3);
+    // Speech energy: how fast the level is changing (syllable onsets/offsets).
+    var kickIn = Math.min(1, Math.max(0, Math.abs(rise) - 0.8) / 2.5) * Math.min(1, st.smooth * 2.5);
+    st.energy += (kickIn - st.energy) * (1 - Math.exp(-dt / 0.12));
+    // Undulation speeds up while speaking.
+    st.phase += dt * o.motionSpeed * (1 + 1.6 * o.reactivity * st.smooth);
+    // Level history (60 Hz samples, ~1 s) for the centre-out ripple.
+    if (!st.hist.length) for (var hi = 0; hi < 64; hi++) st.hist.push(0);
+    st.histAcc += dt;
+    while (st.histAcc >= 1 / 60) {
+        st.histAcc -= 1 / 60;
+        st.histPos = (st.histPos + 1) % 64;
+        st.hist[st.histPos] = st.smooth;
+    }
     st.flash = Math.max(st.flash * Math.exp(-dt / 0.25),
                         Math.min(1, Math.max(0, rise - 2.5) / 6) * Math.min(1, o.peakBoost) * o.onsetSparkle);
     st.burst = o.onsetSparkle > 0 && st.flash > 0.35 && st.lastFlash <= 0.35;
@@ -169,18 +210,34 @@ function bandGlow(st, ctx, cy, strength, thick) {
 }
 
 // ── Ribbon ────────────────────────────────────────────────────────────────
+// Level as it was `delay` seconds ago (from the 60 Hz history ring).
+function smoothAt(st, delay) {
+    if (!st.hist.length || delay <= 0) return st.smooth;
+    var k = Math.min(63, Math.round(delay * 60));
+    return st.hist[(st.histPos - k + 64) % 64];
+}
+function peakOf(st, s) {
+    return Math.min(1, Math.pow(Math.max(0, (s - 0.35) / 0.65), 1.3) * st.opt.peakBoost);
+}
+
 function layoutRibbon(st) {
-    var o = st.opt, t = st.t * o.motionSpeed;
+    var o = st.opt, t = st.phase;
     var cy = st.h / 2, x0 = st.w * 0.05, span = st.w * 0.9;
+    var shake = st.energy * o.reactivity;
     for (var i = 0; i < st.dots.length; i++) {
         var d = st.dots[i];
         var e = env(st, d.t);
+        // Ripple: grains further from the centre see the voice a little later,
+        // so each syllable travels outward along the ribbon.
+        var s = smoothAt(st, Math.abs(d.t - 0.5) * 2 * 0.28 * o.rippleSpread);
         var wob = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * d.f * 0.35 + d.q + d.t * 9));
-        var amp = st.smooth * e * wob * st.h * 0.42 * o.ribbonHeight;
-        d.x = x0 + d.t * span;
-        d.y = cy + d.side * Math.abs(d.j) * amp + d.j * 1.6;
+        var amp = s * e * wob * st.h * 0.46 * o.ribbonHeight;
+        // Syllable kick: fast per-grain jitter proportional to speech energy.
+        var kick = shake * st.h * 0.07 * o.ribbonHeight * Math.sin(st.t * d.f * 2.3 + d.q * 3);
+        d.x = x0 + d.t * span + shake * 3 * Math.sin(st.t * d.f * 1.7 + d.p);
+        d.y = cy + d.side * (Math.abs(d.j) * amp + Math.abs(d.j) * kick) + d.j * 1.6;
         var tw = 1 - o.twinkle * (0.45 - 0.45 * Math.sin(st.t * d.s + d.p));
-        var local = st.peak * wob * e;
+        var local = peakOf(st, s) * wob * e;
         d.local = local;
         d.a = Math.min(1, (0.18 + 0.82 * st.smooth * wob) * (tw + (1 - tw) * local) + st.flash * 0.35 * tw + d.lit * 0.4);
         d.heat = Math.min(1, local * 1.1 + st.flash * 0.6 * (d.r > 1.2 ? 1 : 0.4) + d.lit * 0.5);
