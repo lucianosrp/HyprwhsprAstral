@@ -44,10 +44,13 @@ Like all DMS desktop widgets it lives on the background layer, visible on the de
 
 ## Data source
 
-Same IPC as the other hyprwhspr widgets:
-`$XDG_CONFIG_HOME/hyprwhspr/recording_status` (present while recording) and
-`$XDG_CONFIG_HOME/hyprwhspr/audio_level` (live `0.000`–`1.000` mic level). The monitor loop uses
-only shell builtins, so it forks no processes in steady state and goes silent while idle.
+hyprwhspr's IPC files in `$XDG_RUNTIME_DIR/hyprwhspr` (or `~/.config/hyprwhspr` on older
+hyprwhspr releases): `recording_status` exists while recording, and `audio_level` holds the live
+`0.000`–`1.000` mic level.
+
+The widget runs no processes. Directory watchers (inotify) report when recording starts and
+stops, so nothing polls while idle. While recording, `audio_level` is read in-process about 16
+times a second.
 
 ## Settings
 

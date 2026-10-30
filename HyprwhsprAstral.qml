@@ -1,4 +1,5 @@
 import QtQuick
+import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 import qs.Common
@@ -103,7 +104,9 @@ DesktopPluginComponent {
     }
 
     // ── Size from settings sliders (same mechanism as the Voice Overlay) ──
-    // Desktop-widget size is stored per-monitor in the instance's "positions".
+    // Desktop-widget size is stored per-monitor. Current DMS keeps it in
+    // SessionData.desktopWidgetInstancePositions; older releases kept it in the
+    // instance's "positions" and updated it through SettingsData.
     // The Width/Height sliders write widthPx/heightPx into the instance config;
     // mirror those into the saved size so the slider resizes the widget live.
     readonly property int cfgWidth: Math.round(pluginData.widthPx ?? 0)
@@ -118,21 +121,33 @@ DesktopPluginComponent {
         onTriggered: root.applyConfiguredSize()
     }
 
+    readonly property bool sessionPositions: typeof SessionData.updateDesktopWidgetInstancePosition === "function"
+
+    function storedPositions() {
+        if (root.sessionPositions)
+            return (SessionData.desktopWidgetInstancePositions || {})[root.instanceId] || {}
+        return (root.instanceData && root.instanceData.positions) ? root.instanceData.positions : {}
+    }
+
     function applyConfiguredSize() {
         if (!root.instanceId || root.cfgWidth <= 0 || root.cfgHeight <= 0)
             return
-        var positions = (root.instanceData && root.instanceData.positions) ? root.instanceData.positions : {}
-        var keys = Object.keys(positions)
+        var positions = root.storedPositions()
+        var keys = Object.keys(positions).filter(k => k.charAt(0) !== "_")
         if (keys.length === 0)
             keys = [""]
         for (var i = 0; i < keys.length; i++) {
             var cur = positions[keys[i]] || {}
             if (cur.width === root.cfgWidth && cur.height === root.cfgHeight)
                 continue
-            SettingsData.updateDesktopWidgetInstancePosition(root.instanceId, keys[i], {
+            var update = {
                 "width": root.cfgWidth,
                 "height": root.cfgHeight
-            })
+            }
+            if (root.sessionPositions)
+                SessionData.updateDesktopWidgetInstancePosition(root.instanceId, keys[i], update)
+            else
+                SettingsData.updateDesktopWidgetInstancePosition(root.instanceId, keys[i], update)
         }
     }
 
@@ -140,10 +155,10 @@ DesktopPluginComponent {
     function initSizeFromCurrent() {
         if (!root.instanceId || (pluginData.widthPx ?? 0) > 0)
             return
-        var positions = (root.instanceData && root.instanceData.positions) ? root.instanceData.positions : {}
+        var positions = root.storedPositions()
         var w = 0, h = 0
         for (var k in positions) {
-            if (positions[k] && positions[k].width) {
+            if (k.charAt(0) !== "_" && positions[k] && positions[k].width) {
                 w = positions[k].width
                 h = positions[k].height
                 break
@@ -159,71 +174,90 @@ DesktopPluginComponent {
         })
     }
 
-    Component.onCompleted: Qt.callLater(root.initSizeFromCurrent)
+    Component.onCompleted: {
+        Qt.callLater(root.initSizeFromCurrent)
+        root.rewatchRuntime()
+    }
 
     // ── Runtime state ────────────────────────────────────────────────
-    property bool recording: false
-    property real level: 0.0
     // True while the scene is still moving: recording, or fading out after
     // recording stopped (ribbon settling, motes and links dissolving).
     property bool animating: false
     property real pendingDt: 0
     property real sinceLastPaint: 0
 
-    onRecordingChanged: {
-        if (root.recording) {
-            root.animating = true
-        }
+    // ── hyprwhspr state ──────────────────────────────────────────────
+    // hyprwhspr creates recording_status (and writes audio_level every 100 ms)
+    // in $XDG_RUNTIME_DIR/hyprwhspr only while recording. Directory watchers
+    // (inotify) report it appearing and disappearing, so nothing polls while
+    // idle; audio_level is read in-process, and only while recording. Older
+    // hyprwhspr releases used ~/.config/hyprwhspr, which is watched as well
+    // (the compatibility symlinks it holds dangle while idle and aren't listed).
+    readonly property string runtimeBase: Quickshell.env("XDG_RUNTIME_DIR") || ""
+    readonly property string runtimeDir: runtimeBase ? runtimeBase + "/hyprwhspr" : ""
+    readonly property string legacyDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/hyprwhspr"
+
+    readonly property bool runtimeRecording: runtimeStatus.count > 0
+    readonly property bool legacyRecording: legacyStatus.count > 0
+    readonly property bool recording: runtimeRecording || legacyRecording
+    property real level: 0.0
+
+    FolderListModel {
+        id: runtimeStatus
+        nameFilters: ["recording_status"]
+        showDirs: false
+        showHidden: true
     }
 
-    // ── State + level monitor (same hyprwhspr IPC files as the other widgets) ──
-    // All shell builtins (test/read/printf + read-based sleep on a pipe), so the
-    // steady state forks no processes. While idle it prints a single "I" on the
-    // transition and then stays silent.
-    Process {
-        id: monitor
-        running: true
-        command: ["bash", "-c",
-            'D="${XDG_CONFIG_HOME:-$HOME/.config}/hyprwhspr"\n'
-            + 'exec 9<> <(:)\n'
-            + 'snore() { read -t "$1" -u 9 2>/dev/null || :; }\n'
-            + 'prev=""\n'
-            + 'while :; do\n'
-            + '  if [ -e "$D/recording_status" ]; then\n'
-            + '    L=0\n'
-            + '    { IFS= read -r L < "$D/audio_level"; } 2>/dev/null\n'
-            + '    printf "R %s\\n" "${L:-0}"\n'
-            + '    prev=R\n'
-            + '    snore 0.06\n'
-            + '  else\n'
-            + '    if [ "$prev" != I ]; then printf "I\\n"; prev=I; fi\n'
-            + '    snore 0.35\n'
-            + '  fi\n'
-            + 'done\n']
-        stdout: SplitParser {
-            onRead: line => root.onMonitorLine(line)
-        }
-        onExited: restartTimer.start()
+    // A directory watcher misses files if its directory is created (or
+    // recreated by a hyprwhspr restart) after it started, so re-arm it
+    // whenever the hyprwhspr directory appears or disappears.
+    FolderListModel {
+        folder: root.runtimeBase ? "file://" + root.runtimeBase : ""
+        nameFilters: ["hyprwhspr"]
+        showFiles: false
+        showDirs: true
+        showHidden: true
+        onCountChanged: root.rewatchRuntime()
+    }
+
+    function rewatchRuntime() {
+        runtimeStatus.folder = ""
+        if (root.runtimeDir)
+            Qt.callLater(() => runtimeStatus.folder = "file://" + root.runtimeDir)
+    }
+
+    FolderListModel {
+        id: legacyStatus
+        folder: "file://" + root.legacyDir
+        nameFilters: ["recording_status"]
+        showDirs: false
+        showHidden: true
+    }
+
+    FileView {
+        id: levelFile
+        path: root.recording ? (root.runtimeRecording ? root.runtimeDir : root.legacyDir) + "/audio_level" : ""
+        blockLoading: true
+        printErrors: false
     }
 
     Timer {
-        id: restartTimer
-        interval: 1500
-        onTriggered: monitor.running = true
+        interval: 60
+        repeat: true
+        running: root.recording
+        onTriggered: {
+            levelFile.reload()
+            var v = parseFloat(levelFile.text())
+            root.level = isNaN(v) ? 0 : Math.max(0, Math.min(1, v))
+        }
     }
 
-    function onMonitorLine(line) {
-        var s = (line || "").trim()
-        if (s.length === 0)
-            return
-        if (s.charAt(0) === "R") {
-            root.recording = true
-            var v = parseFloat(s.substring(2))
-            root.level = isNaN(v) ? 0 : Math.max(0, Math.min(1, v))
-        } else {
-            root.recording = false
+    onRecordingChanged: {
+        if (root.recording)
+            root.animating = true
+        else
             root.level = 0
-        }
     }
 
     // Frame-synced loop, only while animating. Frames are throttled to maxFps;

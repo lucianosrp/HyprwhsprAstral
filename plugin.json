@@ -13,5 +13,5 @@
   "compositors": ["any"],
   "requires": ["hyprwhspr"],
   "requires_dms": ">=1.5.0",
-  "permissions": ["settings_read", "settings_write", "process"]
+  "permissions": ["settings_read", "settings_write"]
 }
